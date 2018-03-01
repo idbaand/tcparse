@@ -31,5 +31,12 @@
     <version>1.4.196</version>
     
 </dependency>
+<!--  <dependency org="mysql" name="mysql-connector-java" rev="5.1.26" conf="default" /> -->
+	<dependency>
+    <groupId>mysql</groupId>
+    <artifactId>mysql-connector-java</artifactId>
+    <version>5.1.26</version>
+    
+</dependency>
   </dependencies>
 </project>

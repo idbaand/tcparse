@@ -24,9 +24,10 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 
 public class Main {
 
-	static final String build = "100";
+    static final String TABLE = "report";
+    static final String BUILD = "100";
 	public static void main(String[] args) throws Exception {
-		URL url = Main.class.getClassLoader().getResource("treedata.json");
+		URL url = Main.class.getClassLoader().getResource("reportdata.js");
 
 		System.err.println("Absolute Path to json: " + url.toString());
 
@@ -35,25 +36,26 @@ public class Main {
 		JsonNode root = mapper.readValue(url, JsonNode.class);
 
 		String dburl = "jdbc:h2:./app_features";
-		SingleConnectionDataSource dataSource = new SingleConnectionDataSource(dburl, true);
+		dburl = "jdbc:mysql://localhost/ellipseapps";
+		SingleConnectionDataSource dataSource = new SingleConnectionDataSource(dburl, "ellipse", "ellipse", true);
 		JdbcTemplate jdbc = new JdbcTemplate(dataSource);
 
 		try {
-			jdbc.execute("drop table steps;");
+			jdbc.execute("drop table " + TABLE);
 		} catch (DataAccessException e1) {
 		}
 
 		SimpleJdbcInsert sj = new SimpleJdbcInsert(jdbc);
-		sj.setTableName("steps");
+		sj.setTableName(TABLE);
 		
-		for (JsonNode node : root) {
-			if (node.get("name").asText().equals("Manage People")) {
-				JsonNode managePeople = node.get("children");
+		for (JsonNode node : root.get("package")) {
+			if (node.get("text").asText().equals("Manage People")) {
+				JsonNode managePeople = node.get("testsuite");
 				
 				outer:
 				for (JsonNode ts : managePeople) {
-					for (JsonNode tc : ts.get("children")) {
-						JsonNode steps = tc.get("children");
+					for (JsonNode tc : ts.get("testcase")) {
+						JsonNode steps = tc.get("teststep");
 						if (steps != null) {
 							JsonNode step = steps.get(0);
 							if (step != null) {
@@ -67,7 +69,7 @@ public class Main {
 				System.out.print("\n\n");
 				
 				for (JsonNode ts : managePeople) {
-					for (JsonNode tc : ts.get("children")) {
+					for (JsonNode tc : ts.get("testcase")) {
 						insert(sj, ts, tc);
 					}
 				}
@@ -77,8 +79,8 @@ public class Main {
 		System.out.print("\n\nFirstRecord: ");
 		
 		
-		jdbc.queryForMap("select * from steps limit 1").forEach((k , v) -> {
-			System.out.println(k + " : " + v.toString());
+		jdbc.queryForMap("select * from "+TABLE+" limit 1").forEach((k , v) -> {
+			System.out.println(k + " : " + String.valueOf(v));
 		});
 		
 		System.out.print("\n\n");
@@ -91,9 +93,9 @@ public class Main {
 				
 				String[] result = new String[3];
 				String[] q = {
-						"select count(*) from steps",
-						"select count(*) from steps group by tsId",
-						"select count(*) from steps group by tcId"
+						"select count(*) from report",
+						"SELECT COUNT(*) FROM (SELECT DISTINCT tsid FROM report) a",
+						"SELECT COUNT(*) FROM (SELECT DISTINCT tcid FROM report) a"
 				};
 				
 				int i = 0;
@@ -116,14 +118,20 @@ public class Main {
 	static void createTable(JdbcTemplate jdbc, JsonNode step) {
 		Iterator<String> fields = step.fieldNames();
 		StringBuilder sb = new StringBuilder();
-		sb.append("create table steps (").append("\n");
+		sb.append("create table ").append("report").append(" (\n");
 		sb.append("build varchar(20), \n");
 		sb.append("tcId varchar(255), \n");
 		sb.append("tcName varchar(255), \n");
 		sb.append("tsId varchar(255), \n");
 		sb.append("tsName varchar(255), \n");
 		sb.append("tcStatus varchar(255), \n");
-		sb.append(join(fields, n -> n + " VARCHAR(255)", ", \n"));
+		sb.append("tsStatus varchar(255), \n");
+		sb.append("errorType varchar(255), \n");
+		sb.append("error TEXT, \n");
+		sb.append(join(fields, n -> {
+            return n.matches("id|text|action|label|value|status") ? n + " VARCHAR(255)" : n + " TEXT";
+         }, ", \n"));
+        
 		sb.append(")");
 		System.out.println(sb.toString());
 		jdbc.execute(sb.toString());
@@ -144,18 +152,27 @@ public class Main {
 
 	public static void insert(SimpleJdbcInsert insert, JsonNode ts, JsonNode tc) {
 
-		for (JsonNode step : tc.get("children")) {
+		for (JsonNode step : tc.get("teststep")) {
 			//System.out.println("got tc step --> tc: " + tc.get("id").asText() + " --> " + step.get("id") + " action: "
 			//		+ step.get("action"));
 			ObjectNode stepEdit = (ObjectNode) step;
 			stepEdit.put("tsId", ts.get("id").asText());
-			stepEdit.put("tsName", ts.get("name").asText());
+			stepEdit.put("tsName", ts.get("text").asText());
 			stepEdit.put("tcId", tc.get("id").asText());
-			stepEdit.put("tcName", tc.get("name").asText());
+			stepEdit.put("tcName", tc.get("text").asText());
 			stepEdit.put("tcStatus", tc.get("status").asText());
-
+			stepEdit.put("tsStatus", ts.get("status").asText());
 			Map<String, Object> params = toMap(stepEdit);
-			params.put("build", build);
+			JsonNode error = stepEdit.get("error");
+			if (error!= null) {
+			    JsonNode errorDesc = error.get("desc");
+			    JsonNode errorType = error.get("type");
+			    
+			    if(errorDesc!=null) params.put("error", errorDesc.asText());
+			    if(errorDesc!=null) params.put("errorType", errorType.asText());
+			}
+			
+			params.put("build", BUILD);
 			insert.execute(params);
 		}
 	}
