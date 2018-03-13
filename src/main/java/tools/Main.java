@@ -7,6 +7,8 @@ import java.sql.Statement;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.function.Function;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import java.util.stream.StreamSupport;
@@ -24,8 +26,83 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 
 public class Main {
 
-    static final String TABLE = "report";
-    static final String BUILD = "100";
+    static final String TABLE = "step";
+    static final Integer BUILD = 100;
+    
+    JdbcTemplate jdbc;
+    ObjectMapper mapper;
+    
+    public Main() {
+        String dburl = "jdbc:h2:./app_features";
+        dburl = "jdbc:mysql://localhost/ellipseapps";
+        
+        SingleConnectionDataSource dataSource = new SingleConnectionDataSource(dburl, "ellipse", "ellipse", true);
+        jdbc = new JdbcTemplate(dataSource);
+        
+        mapper = new ObjectMapper();
+        mapper.configure(JsonParser.Feature.ALLOW_BACKSLASH_ESCAPING_ANY_CHARACTER, true);
+        mapper.configure(JsonParser.Feature.ALLOW_TRAILING_COMMA, true);
+    }
+    
+    public Main createReportTable() {
+        String createTable = "create table "+TABLE+" (\r\n" + 
+                "build int, \r\n" + 
+                "tcId varchar(255), \r\n" + 
+                "tcName varchar(255), \r\n" + 
+                "tsId varchar(255), \r\n" + 
+                "tsName varchar(255), \r\n" + 
+                "tcStatus varchar(255), \r\n" + 
+                "tsStatus varchar(255), \r\n" + 
+                "errorType varchar(255), \r\n" + 
+                "error TEXT, \r\n" + 
+                "stepId VARCHAR(255), \r\n" + 
+                "text VARCHAR(255), \r\n" + 
+                "action VARCHAR(255), \r\n" + 
+                "label VARCHAR(255), \r\n" + 
+                "value VARCHAR(255), \r\n" + 
+                "actualvalue TEXT, \r\n" + 
+                "status VARCHAR(255), \r\n" + 
+                "screenshot TEXT, \r\n" + 
+                "sourcecapture TEXT)";
+        
+        try {
+            jdbc.execute(createTable);
+        } catch (DataAccessException e1) {
+            System.err.println("failed create table report: " + e1.getMessage());
+        }
+        
+        return this;
+    }
+    
+    public Main dropReportTable() {
+        try {
+            jdbc.execute("drop table "+TABLE);
+        } catch (DataAccessException e1) {
+            System.err.println("failed drop table "+TABLE+": " + e1.getMessage());
+        }
+        
+        return this;
+    }
+    
+    static String stripToJson(String content) {
+        String regex = "(?<=var reportData = )(.*)";
+        Pattern pattern = Pattern.compile(regex);
+        Matcher m = pattern.matcher(content);
+        if (m.matches()) {
+            System.out.println(m.group(1).substring(0, 100));
+        }
+        
+        return null;
+    }
+    
+    public Main doImport(String url) {
+        return this;
+    }
+    
+    public Main stats() {
+        return this;
+    }
+    
 	public static void main(String[] args) throws Exception {
 		URL url = Main.class.getClassLoader().getResource("reportdata.js");
 
@@ -93,9 +170,9 @@ public class Main {
 				
 				String[] result = new String[3];
 				String[] q = {
-						"select count(*) from report",
-						"SELECT COUNT(*) FROM (SELECT DISTINCT tsid FROM report) a",
-						"SELECT COUNT(*) FROM (SELECT DISTINCT tcid FROM report) a"
+						"select count(*) from "+TABLE,
+						"SELECT COUNT(*) FROM (SELECT DISTINCT tsid FROM "+TABLE+") a",
+						"SELECT COUNT(*) FROM (SELECT DISTINCT tcid FROM "+TABLE+" a"
 				};
 				
 				int i = 0;
@@ -118,7 +195,7 @@ public class Main {
 	static void createTable(JdbcTemplate jdbc, JsonNode step) {
 		Iterator<String> fields = step.fieldNames();
 		StringBuilder sb = new StringBuilder();
-		sb.append("create table ").append("report").append(" (\n");
+		sb.append("create table ").append(TABLE).append(" (\n");
 		sb.append("build varchar(20), \n");
 		sb.append("tcId varchar(255), \n");
 		sb.append("tcName varchar(255), \n");
@@ -162,7 +239,10 @@ public class Main {
 			stepEdit.put("tcName", tc.get("text").asText());
 			stepEdit.put("tcStatus", tc.get("status").asText());
 			stepEdit.put("tsStatus", ts.get("status").asText());
+			stepEdit.put("stepId", step.get("id").asText());
+			
 			Map<String, Object> params = toMap(stepEdit);
+			params.remove("id");
 			JsonNode error = stepEdit.get("error");
 			if (error!= null) {
 			    JsonNode errorDesc = error.get("desc");
